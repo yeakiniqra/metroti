@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, KeyboardAvoidingView, ScrollView, ToastAndroid, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, KeyboardAvoidingView, ScrollView, ToastAndroid, ActivityIndicator,Platform } from 'react-native';
 import React, { useState, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -11,24 +11,25 @@ export default function Signup() {
   const emailRef = useRef("");
   const phoneRef = useRef("");
   const passwordRef = useRef("");
+  const rapidpassRef = useRef("");
   const { register } = useAuth();
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
-    if (!usernameRef.current || !emailRef.current || !phoneRef.current || !passwordRef.current) {
+    if (!usernameRef.current || !emailRef.current || !phoneRef.current || !passwordRef.current || !rapidpassRef.current) {
       ToastAndroid.show("Please fill all the fields", ToastAndroid.SHORT);
       return;
     }
 
     setLoading(true);
-    let response = await register(emailRef.current, passwordRef.current, usernameRef.current, phoneRef.current);
+    let response = await register(emailRef.current, passwordRef.current, usernameRef.current, phoneRef.current, rapidpassRef.current);
     setLoading(false);
 
     if (response.success) {
       ToastAndroid.show("Registration successful!", ToastAndroid.SHORT);
       router.push('/Home');
     } else {
-      ToastAndroid.show("Something went wrong", ToastAndroid.SHORT);
+      ToastAndroid.show(response.msg || "Something went wrong", ToastAndroid.SHORT);
     }
   };
 
@@ -71,6 +72,12 @@ export default function Signup() {
               keyboardType="phone-pad"
               onChangeText={value => phoneRef.current = value}
             />
+             <TextInput
+              style={styles.input}
+              placeholder="Rapid Pass No."
+              keyboardType="phone-pad"
+              onChangeText={value => rapidpassRef.current = value}
+            />
             <TextInput
               style={styles.input}
               placeholder="Password"
@@ -106,6 +113,7 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flexGrow: 1,
+    paddingBottom: 30,
   },
   waveContainer: {
     height: 240,

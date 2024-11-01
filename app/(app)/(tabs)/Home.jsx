@@ -36,28 +36,36 @@ export default function Home() {
         </View>
 
         <View style={styles.menuGrid}>
-          <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#FFE0B2' }]}>
+          <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#FFE0B2' }]}
+            onPress={() => router.push('/Notices')}
+          >
             <View style={styles.iconContainer}>
-              <Ionicons name="git-branch-outline" size={24} color="#666" />
+              <Ionicons name="notifications-outline" size={24} color="#666" />
             </View>
-            <Text style={styles.menuText}>Journey Path</Text>
+            <Text style={styles.menuText}>Metro Notices</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#BBDEFB' }]}>
+          <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#BBDEFB' }]}
+            onPress={() => router.push('/Ticket')}
+          >
             <View style={styles.iconContainer}>
               <Ionicons name="ticket-outline" size={24} color="#666" />
             </View>
             <Text style={styles.menuText}>Tickets</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#C8E6C9' }]}>
+          <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#C8E6C9' }]}
+            onPress={() => router.push('/Map')}
+          >
             <View style={styles.iconContainer}>
               <Ionicons name="map-outline" size={24} color="#666" />
             </View>
             <Text style={styles.menuText}>Transport Map</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#FFCDD2' }]}>
+          <TouchableOpacity style={[styles.menuItem, { backgroundColor: '#FFCDD2' }]} 
+            onPress={() => router.push('/Recharge')}
+          >
             <View style={styles.iconContainer}>
               <Ionicons name="card-outline" size={24} color="#666" />
             </View>
@@ -98,10 +106,6 @@ export default function Home() {
                 <Text style={styles.stationText}>Shahbagh</Text>
               </View>
             </View>
-
-            <TouchableOpacity style={styles.bookButton}>
-              <Text style={styles.bookButtonText}>Book now</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>

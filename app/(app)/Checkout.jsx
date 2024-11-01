@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, Modal, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Modal, Alert, ScrollView } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../firebaseConfig';
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, doc, getDoc, updateDoc } from "firebase/firestore";
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import ViewShot from "react-native-view-shot";
@@ -16,13 +16,28 @@ export default function Checkout() {
     const router = useRouter();
     const viewShotRef = React.useRef();
     const { user } = useAuth();
-
-    // State for Card Information
-    const [cardNumber, setCardNumber] = useState('');
-    const [cardHolder, setCardHolder] = useState('');
-    const [expiryDate, setExpiryDate] = useState('');
-    const [cvv, setCvv] = useState('');
+    
     const [modalVisible, setModalVisible] = useState(false);
+    const [userBalance, setUserBalance] = useState(0);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetchUserBalance();
+    }, []);
+
+    const fetchUserBalance = async () => {
+        try {
+            const userDoc = await getDoc(doc(db, "users", user.userId));
+            if (userDoc.exists()) {
+                setUserBalance(userDoc.data().balance || 0);
+            }
+            setLoading(false);
+        } catch (error) {
+            console.error("Error fetching user balance:", error);
+            Alert.alert("Error", "Failed to fetch your balance.");
+            setLoading(false);
+        }
+    };
 
     const handleDownloadTicket = async () => {
         try {
@@ -43,48 +58,66 @@ export default function Checkout() {
     };
 
     const handleCheckout = async () => {
-        if (!cardNumber || !cardHolder || !expiryDate || !cvv) {
-            Alert.alert("Incomplete Information", "Please fill in all card details.");
-            return;
-        }
-
         if (!user || !user.userId) {
             Alert.alert("Error", "User not authenticated.");
             return;
         }
 
+        if (userBalance < parseFloat(fare)) {
+            Alert.alert(
+                "Insufficient Balance",
+                `Your balance (₹${userBalance}) is insufficient for this ticket (₹${fare}). Please recharge your account.`,
+                [
+                    {
+                        text: "Recharge Now",
+                        onPress: () => router.push('/Recharge')
+                    },
+                    {
+                        text: "Cancel",
+                        style: "cancel"
+                    }
+                ]
+            );
+            return;
+        }
+
         try {
+            // Update user's balance
+            const newBalance = userBalance - parseFloat(fare);
+            await updateDoc(doc(db, "users", user.userId), {
+                balance: newBalance
+            });
+
+            // Create ticket document
             const ticketData = {
-                userId: user.userId, // Add user ID to ticket data
+                userId: user.userId,
                 startStation,
                 destinationStation,
                 selectedDate,
                 numPersons,
                 fare,
-                cardHolder,
-                status: 'Running', // Add initial status
+                status: 'Running',
                 createdAt: new Date().toISOString(),
-                date: selectedDate // For consistency with history view
+                date: selectedDate
             };
 
             await addDoc(collection(db, "tickets"), ticketData);
+            setUserBalance(newBalance);
             setModalVisible(true);
         } catch (error) {
-            Alert.alert("Error", "Failed to save ticket information.");
-            console.error("Error saving document: ", error);
+            Alert.alert("Error", "Failed to process the ticket purchase.");
+            console.error("Error during checkout: ", error);
         }
     };
 
     let [fontsLoaded] = useFonts({
         'poppins-regular': require('../../assets/fonts/Poppins-Regular.ttf'),
         'poppins-semibold': require('../../assets/fonts/Poppins-SemiBold.ttf'),
+    });
 
-    })
-
-    if (!fontsLoaded) {
-        return null
+    if (!fontsLoaded || loading) {
+        return null;
     }
-
 
     const TicketCard = () => (
         <ViewShot ref={viewShotRef} options={{ format: "jpg", quality: 0.9 }}>
@@ -118,9 +151,17 @@ export default function Checkout() {
                         <Text style={styles.detailValue}>{new Date(selectedDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
                         <Text style={styles.detailValue}>{new Date(selectedDate).toLocaleDateString()}</Text>
                     </View>
+                    <View style={[styles.detailRow, styles.balanceRow]}>
+                        <Text style={styles.detailLabel}>Current Balance</Text>
+                        <Text style={styles.balanceText}>BDT {userBalance.toFixed(2)}</Text>
+                    </View>
                     <View style={[styles.detailRow, styles.totalRow]}>
-                        <Text style={styles.totalLabel}>Total</Text>
-                        <Text style={styles.totalAmount}>BDT: {fare}</Text>
+                        <Text style={styles.totalLabel}>Total Fare</Text>
+                        <Text style={styles.totalAmount}>BDT {fare}</Text>
+                    </View>
+                    <View style={[styles.detailRow, styles.remainingRow]}>
+                        <Text style={styles.detailLabel}>Remaining Balance</Text>
+                        <Text style={styles.remainingText}>BDT {(userBalance - parseFloat(fare)).toFixed(2)}</Text>
                     </View>
                 </View>
             </View>
@@ -129,87 +170,69 @@ export default function Checkout() {
 
     return (
         <SafeAreaView style={styles.container}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'padding' : 'height'} style={styles.flexContainer}>
-                <ScrollView showsVerticalScrollIndicator={false}>
-                    <Text style={styles.header}>Confirmation</Text>
-                    <TicketCard />
+            <ScrollView showsVerticalScrollIndicator={false}>
+                
+                <TicketCard />
 
-                    {/* Card Information Fields */}
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Card Number"
-                        keyboardType="numeric"
-                        value={cardNumber}
-                        onChangeText={setCardNumber}
-                    />
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Card Holder Name"
-                        value={cardHolder}
-                        onChangeText={setCardHolder}
-                    />
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Expiry Date (MM/YY)"
-                        value={expiryDate}
-                        onChangeText={setExpiryDate}
-                    />
-                    <TextInput
-                        style={styles.input}
-                        placeholder="CVV"
-                        keyboardType="numeric"
-                        secureTextEntry
-                        value={cvv}
-                        onChangeText={setCvv}
-                    />
+                <View style={styles.warningContainer}>
+                    <Ionicons name="information-circle-outline" size={24} color="#FF9800" />
+                    <Text style={styles.warningText}>
+                        Amount will be deducted from your Rapid Pass Card balance
+                    </Text>
+                </View>
 
-                    <TouchableOpacity style={styles.button} onPress={handleCheckout}>
-                        <Text style={styles.buttonText}>
-                            <Ionicons name="checkmark-done-outline" size={20} /> Proceed to Payment
-                        </Text>
-                    </TouchableOpacity>
+                <TouchableOpacity 
+                    style={[
+                        styles.button,
+                        userBalance < parseFloat(fare) && styles.disabledButton
+                    ]} 
+                    onPress={handleCheckout}
+                    disabled={userBalance < parseFloat(fare)}
+                >
+                    <Text style={styles.buttonText}>
+                        <Ionicons name="checkmark-done-outline" size={20} /> Confirm Purchase
+                    </Text>
+                </TouchableOpacity>
 
-                    {/* Success Modal */}
-                    <Modal
-                        animationType="fade"
-                        transparent={true}
-                        visible={modalVisible}
-                        onRequestClose={() => setModalVisible(false)}
-                    >
-                        <View style={styles.modalContainer}>
-                            <View style={styles.modalView}>
-                                <View style={styles.successIcon}>
-                                    <Ionicons name="checkmark-circle" size={60} color="#4CAF50" />
-                                </View>
+                {/* Success Modal */}
+                <Modal
+                    animationType="fade"
+                    transparent={true}
+                    visible={modalVisible}
+                    onRequestClose={() => setModalVisible(false)}
+                >
+                    <View style={styles.modalContainer}>
+                        <View style={styles.modalView}>
+                            <View style={styles.successIcon}>
+                                <Ionicons name="checkmark-circle" size={60} color="#4CAF50" />
+                            </View>
 
-                                <Text style={styles.modalTitle}>Ticket Purchased Successfully!</Text>
+                            <Text style={styles.modalTitle}>Ticket Purchased Successfully!</Text>
 
-                                <View style={styles.modalButtons}>
-                                    <TouchableOpacity
-                                        style={styles.downloadButton}
-                                        onPress={handleDownloadTicket}
-                                    >
-                                        <Ionicons name="download-outline" size={20} color="#fff" />
-                                        <Text style={styles.buttonText}>Download Ticket</Text>
-                                    </TouchableOpacity>
+                            <View style={styles.modalButtons}>
+                                <TouchableOpacity
+                                    style={styles.downloadButton}
+                                    onPress={handleDownloadTicket}
+                                >
+                                    <Ionicons name="download-outline" size={20} color="#fff" />
+                                    <Text style={styles.buttonText}>Download Ticket</Text>
+                                </TouchableOpacity>
 
-                                    <TouchableOpacity
-                                        style={styles.closeButton}
-                                        onPress={() => {
-                                            setModalVisible(false);
-                                            router.push('/Home');
-                                        }}
-                                    >
-                                        <Ionicons name="close-outline" size={20} color="#fff" />
-                                        <Text style={styles.buttonText}>Close</Text>
-                                    </TouchableOpacity>
-                                </View>
+                                <TouchableOpacity
+                                    style={styles.closeButton}
+                                    onPress={() => {
+                                        setModalVisible(false);
+                                        router.push('/Home');
+                                    }}
+                                >
+                                    <Ionicons name="close-outline" size={20} color="#fff" />
+                                    <Text style={styles.buttonText}>Close</Text>
+                                </TouchableOpacity>
                             </View>
                         </View>
-                    </Modal>
-
-                </ScrollView>
-            </KeyboardAvoidingView>
+                    </View>
+                </Modal>
+            </ScrollView>
         </SafeAreaView>
     );
 }
@@ -217,178 +240,193 @@ export default function Checkout() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
-    },
-    flexContainer: {
-        flex: 1,
-        padding: 20,
+        backgroundColor: '#f5f5f5',
+        padding: 16,
     },
     header: {
-        fontSize: 24,
         fontFamily: 'poppins-semibold',
+        fontSize: 24,
         marginBottom: 20,
+        color: '#333',
     },
     ticketCard: {
         backgroundColor: '#fff',
-        borderRadius: 12,
+        borderRadius: 15,
+        padding: 16,
         marginBottom: 20,
         shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
     },
     ticketHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        padding: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        marginBottom: 20,
     },
     routeInfo: {
         flex: 1,
     },
     stationInfo: {
-        marginBottom: 15,
+        marginBottom: 10,
     },
     label: {
-        fontSize: 14,
-        color: '#666',
-        marginBottom: 4,
         fontFamily: 'poppins-regular',
+        fontSize: 12,
+        color: '#666',
     },
     stationText: {
-        fontSize: 18,
-        fontWeight: '600',
         fontFamily: 'poppins-semibold',
+        fontSize: 16,
+        color: '#333',
     },
     qrContainer: {
-        padding: 5,
+        padding: 10,
+        backgroundColor: '#fff',
+        borderRadius: 10,
     },
     ticketDetails: {
-        padding: 15,
+        borderTopWidth: 1,
+        borderTopColor: '#eee',
+        paddingTop: 16,
     },
     detailRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginBottom: 10,
+        alignItems: 'center',
+        marginBottom: 12,
     },
     detailLabel: {
-        color: '#666',
-        fontSize: 14,
         fontFamily: 'poppins-regular',
+        fontSize: 14,
+        color: '#666',
     },
     detailValue: {
+        fontFamily: 'poppins-regular',
         fontSize: 14,
-        fontWeight: '500',
+        color: '#333',
+    },
+    balanceRow: {
+        backgroundColor: '#f8f9fa',
+        padding: 10,
+        borderRadius: 8,
+        marginBottom: 8,
+    },
+    balanceText: {
         fontFamily: 'poppins-semibold',
+        fontSize: 16,
+        color: '#2196F3',
     },
     totalRow: {
-        marginTop: 10,
-        paddingTop: 10,
         borderTopWidth: 1,
         borderTopColor: '#eee',
-        backgroundColor: '#f8fff8',
+        paddingTop: 12,
+        marginTop: 8,
     },
     totalLabel: {
-        fontSize: 16,
         fontFamily: 'poppins-semibold',
+        fontSize: 16,
+        color: '#333',
     },
     totalAmount: {
-        fontSize: 16,
         fontFamily: 'poppins-semibold',
-        color: '#00a650',
+        fontSize: 18,
+        color: '#4CAF50',
     },
-    input: {
-        borderWidth: 1,
-        borderColor: '#ccc',
+    remainingRow: {
+        backgroundColor: '#fff3e0',
         padding: 10,
-        marginBottom: 10,
-        borderRadius: 5,
+        borderRadius: 8,
+    },
+    remainingText: {
+        fontFamily: 'poppins-semibold',
+        fontSize: 16,
+        color: '#ff9800',
+    },
+    warningContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFF3E0',
+        padding: 12,
+        borderRadius: 8,
+        marginBottom: 20,
+    },
+    warningText: {
         fontFamily: 'poppins-regular',
+        fontSize: 14,
+        color: '#F57C00',
+        marginLeft: 8,
+        flex: 1,
     },
     button: {
-        backgroundColor: '#007BFF',
-        paddingVertical: 15,
-        paddingHorizontal: 30,
-        borderRadius: 5,
+        backgroundColor: '#2196F3',
+        padding: 16,
+        borderRadius: 8,
         alignItems: 'center',
-        flexDirection: 'row',
-        justifyContent: 'center',
+        marginBottom: 20,
+    },
+    disabledButton: {
+        backgroundColor: '#ccc',
     },
     buttonText: {
-        color: '#FFF',
-        fontSize: 18,
         fontFamily: 'poppins-semibold',
-        marginLeft: 5,
+        color: '#fff',
+        fontSize: 16,
     },
     modalContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        padding: 20,
-      },
-      modalView: {
-        backgroundColor: 'white',
-        borderRadius: 16,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    modalView: {
+        backgroundColor: '#fff',
+        borderRadius: 20,
         padding: 24,
-        width: '100%',
-        maxWidth: 340,
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: {
-          width: 0,
-          height: 2
-        },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 5,
-      },
-      successIcon: {
+        width: '90%',
+        maxWidth: 400,
+    },
+    successIcon: {
         marginBottom: 16,
-      },
-      modalTitle: {
+    },
+    modalTitle: {
+        fontFamily: 'poppins-semibold',
         fontSize: 20,
-        fontFamily: 'poppins-semibold',
         color: '#333',
-        marginBottom: 24,
+        marginBottom: 8,
         textAlign: 'center',
-      },
-      modalButtons: {
+    },
+    modalBalance: {
+        fontFamily: 'poppins-regular',
+        fontSize: 16,
+        color: '#666',
+        marginBottom: 20,
+    },
+    modalButtons: {
         flexDirection: 'row',
-        gap: 12,
+        justifyContent: 'space-around',
         width: '100%',
-      },
-      downloadButton: {
-        flex: 1,
+    },
+    downloadButton: {
         backgroundColor: '#4CAF50',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
+        padding: 12,
         borderRadius: 8,
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-      },
-      closeButton: {
+        marginRight: 8,
         flex: 1,
-        backgroundColor: 'black',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
+        justifyContent: 'center',
+    },
+    closeButton: {
+        backgroundColor: '#F44336',
+        padding: 12,
         borderRadius: 8,
         flexDirection: 'row',
         alignItems: 'center',
+        marginLeft: 8,
+        flex: 1,
         justifyContent: 'center',
-        gap: 8,
-      },
-      buttonText: {
-        color: 'white',
-        fontSize: 15,
-        fontWeight: '500',
-        fontFamily: 'poppins-semibold',
-      },
+    },
 });
